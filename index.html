@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Disquizz</title>
+<meta name="description" content="Trivia en vivo para jugar desde el celular, sin cuentas ni instalaciones.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;0,9..144,900;1,9..144,600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#13102A; --bg2:#1C1740; --surface:#231C4D; --surface2:#2C2460;
+  --fg:#F3F0FF; --muted:#A89FD6; --line:#3A3178;
+  --accent:#FFC94A; --accent-ink:#2A1B00;
+  --ok:#3FD08A; --bad:#FF6262;
+  --a1:#E84855; --a2:#2C7BE5; --a3:#F2B705; --a4:#3FD08A;
+  --radius:18px;
+  color-scheme: dark;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:radial-gradient(1200px 800px at 50% -10%, var(--bg2), var(--bg) 60%);
+  color:var(--fg);
+  font-family:'IBM Plex Sans', system-ui, sans-serif;
+  padding-inline:16px;
+  padding-block:18px;
+  padding-top:calc(18px + env(safe-area-inset-top, 0px));
+  padding-bottom:calc(18px + env(safe-area-inset-bottom, 0px));
+}
+h1,h2,h3{font-family:'Fraunces', Georgia, serif; text-wrap:balance; margin:0;}
+.mono{font-family:'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric:tabular-nums;}
+.wrap{max-width:720px; margin-inline:auto; display:flex; flex-direction:column; gap:18px; min-height:calc(100vh - 36px);}
+
+.topbar{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+.brand{display:flex; align-items:baseline; gap:8px;}
+.brand .mark{font-family:'Fraunces',serif; font-weight:900; font-size:22px; letter-spacing:-.02em;}
+.brand .mark em{font-style:normal; color:var(--accent);}
+.phase-pill{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); border:1px solid var(--line); padding:5px 10px; border-radius:999px;}
+
+.card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:22px; min-width:0;}
+.stage{flex:1; display:flex; flex-direction:column; gap:18px; justify-content:center;}
+
+.btn{
+  font-family:'IBM Plex Sans', sans-serif; font-weight:600; font-size:15px;
+  border-radius:12px; border:1px solid var(--line); background:var(--surface2); color:var(--fg);
+  padding:13px 18px; cursor:pointer; transition:transform .08s ease, border-color .15s ease;
+}
+.btn:hover{border-color:var(--accent);}
+.btn:active{transform:scale(.98);}
+.btn:disabled{opacity:.45; cursor:not-allowed; transform:none;}
+.btn.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+.btn.ghost{background:transparent;}
+.btn.block{width:100%; text-align:center;}
+.btn.big{font-size:18px; padding:16px 22px;}
+
+input[type=text]{
+  font-family:'IBM Plex Mono', monospace; font-size:16px; width:100%;
+  background:var(--bg2); border:1px solid var(--line); border-radius:12px; color:var(--fg);
+  padding:13px 14px;
+}
+input[type=text]:focus{outline:2px solid var(--accent); outline-offset:1px;}
+label.field{display:flex; flex-direction:column; gap:6px; font-size:13px; color:var(--muted);}
+
+.row{display:flex; gap:10px; flex-wrap:wrap;}
+.col{display:flex; flex-direction:column; gap:10px;}
+
+.chip-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
+@media (max-width:460px){ .chip-grid{grid-template-columns:1fr;} }
+.chip{
+  display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:12px;
+  padding:12px 14px; cursor:pointer; background:var(--surface2); min-width:0;
+}
+.chip input{accent-color:var(--accent); width:16px; height:16px; flex:none;}
+.chip .n{font-size:12px; color:var(--muted);}
+.chip.checked{border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent);}
+
+.seg{display:flex; border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+.seg button{flex:1; padding:10px; background:var(--surface2); border:none; color:var(--fg); font-family:inherit; font-weight:600; cursor:pointer; border-right:1px solid var(--line);}
+.seg button:last-child{border-right:none;}
+.seg button.on{background:var(--accent); color:var(--accent-ink);}
+
+.players{display:flex; flex-wrap:wrap; gap:8px;}
+.player-tag{background:var(--surface2); border:1px solid var(--line); border-radius:999px; padding:7px 13px; font-size:14px; display:flex; align-items:center; gap:6px;}
+.player-tag .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);}
+
+.qtext{font-size:clamp(20px,4vw,28px); font-weight:700; line-height:1.3;}
+.timerbar{height:10px; border-radius:999px; background:var(--bg2); border:1px solid var(--line); overflow:hidden;}
+.timerbar > div{height:100%; background:var(--accent); transition:width .25s linear;}
+
+.opts{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;}
+@media (max-width:480px){ .opts{grid-template-columns:1fr;} }
+.opt{
+  display:flex; align-items:center; gap:12px; border:none; border-radius:14px; padding:16px;
+  color:#fff; font-weight:700; font-size:16px; text-align:left; cursor:pointer; min-width:0;
+  box-shadow:0 2px 0 rgba(0,0,0,.25); transition:transform .08s ease, filter .15s ease;
+}
+.opt:active{transform:scale(.97);}
+.opt .shape{width:16px;height:16px; flex:none; background:rgba(255,255,255,.85);}
+.opt .label{min-width:0; overflow-wrap:anywhere;}
+.opt.o0{background:var(--a1);} .opt.o0 .shape{clip-path:polygon(50% 0,100% 100%,0 100%);}
+.opt.o1{background:var(--a2);} .opt.o1 .shape{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);}
+.opt.o2{background:var(--a3);} .opt.o2 .shape{border-radius:50%;}
+.opt.o3{background:var(--a4);} .opt.o3 .shape{border-radius:3px;}
+.opt:disabled{opacity:.45; cursor:default;}
+.opt.correct{outline:3px solid var(--ok); outline-offset:2px;}
+.opt.wrong{outline:3px solid var(--bad); outline-offset:2px;}
+.opt.picked:not(.correct):not(.wrong){outline:3px solid #fff; outline-offset:2px;}
+
+.muted{color:var(--muted);}
+.center{text-align:center;}
+.err{color:var(--bad); font-size:14px; min-height:18px;}
+.counts{display:flex; flex-direction:column; gap:8px;}
+.countrow{display:flex; align-items:center; gap:10px; font-size:14px;}
+.countrow .track{flex:1; height:14px; border-radius:7px; background:var(--bg2); border:1px solid var(--line); overflow:hidden;}
+.countrow .fill{height:100%; border-radius:7px;}
+.countrow .n{width:26px; text-align:right; font-family:'IBM Plex Mono',monospace;}
+
+.lead{display:flex; flex-direction:column; gap:8px;}
+.leadrow{display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:12px; background:var(--surface2); border:1px solid var(--line);}
+.leadrow .rank{font-family:'IBM Plex Mono',monospace; font-weight:700; width:26px; color:var(--muted);}
+.leadrow .name{flex:1; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.leadrow .score{font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--accent);}
+.leadrow.me{border-color:var(--accent);}
+.podium{display:flex; align-items:flex-end; gap:10px; justify-content:center; margin-block:6px;}
+.podium .pillar{display:flex; flex-direction:column; align-items:center; gap:6px; width:92px;}
+.podium .bar{width:100%; border-radius:10px 10px 0 0; background:var(--surface2); border:1px solid var(--line); display:flex; align-items:flex-start; justify-content:center; padding-top:8px; font-family:'IBM Plex Mono',monospace; font-weight:700;}
+.podium .nm{font-size:12px; text-align:center; overflow-wrap:anywhere;}
+.podium .p1 .bar{height:110px; background:var(--accent); color:var(--accent-ink);}
+.podium .p2 .bar{height:80px;}
+.podium .p3 .bar{height:58px;}
+
+.feedback{display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; padding-block:20px;}
+.feedback .pts{font-family:'Fraunces',serif; font-weight:900; font-size:44px;}
+.feedback.ok .pts{color:var(--ok);}
+.feedback.no .pts{color:var(--bad);}
+
+.qrbox{background:#ffffff; border-radius:14px; padding:14px; display:inline-flex; align-self:center;}
+.qrbox img, .qrbox canvas{display:block; width:160px; height:160px;}
+.codetext{font-family:'IBM Plex Mono',monospace; font-size:12px; word-break:break-all; background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; text-align:center;}
+
+.hidden{display:none!important;}
+footer.note{font-size:12px; color:var(--muted); text-align:center;}
+spinner{display:inline-block;}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+const QUESTION_BANK = {"Música": [{"question": "¿Quién es el cantante de la banda Queen?", "options": ["Michael Jackson", "Freddie Mercury", "Brian Mey", "Kurt Cobain"], "correct": 1}, {"question": "Banda que canta la canción 'La voz de los 80'", "options": ["Los tres", "Los prisioneros", "Los Bunkers", "Chancho en Piedra"], "correct": 1}, {"question": "¿Quién canta la canción  'Smells like a teen spirit'?", "options": ["Pink Floyd", "Cachureo", "Nirvana", "Pearl jam"], "correct": 2}, {"question": "Nombre de la última banda Chilena en grabar un  concierto MTV Unplugged", "options": ["Los Tres", "Los Bunkers", "La Ley", "Glup!"], "correct": 1}, {"question": "¿Qué artista cante 'Shape ff You'?", "options": ["Bruno Mars", "Justin Bieber", "Ed Sheeran", "Shaw Mendes"], "correct": 2}, {"question": "¿Cuál es la nacionalidad de Daddy Yankee?", "options": ["Estado Unidos", "Cuba", "Puerto Rico", "Perú"], "correct": 2}, {"question": "¿Quién canta  'all i want for christmas is you?", "options": ["Mariah Carey", "Beyoncé", "Angélica Flores", "Whitney  Houston"], "correct": 0}, {"question": "¿Cuál de las siguientes canciones no es de la banda Cafe tvcuba?", "options": ["Eres", "Afuera", "Las flores", "Ingrata"], "correct": 1}, {"question": "¿En que año se separaron Los  Beatles?", "options": ["1960.0", "1963.0", "1970.0", "2025.0"], "correct": 2}, {"question": "¿Quién canta la canción No Me Hables de sufrir?", "options": ["Los Prisioneros", "La ley", "Lucybell", "Los Bunkers"], "correct": 3}, {"question": "¿Qué cantante chilena, también nacionalizada mexicana, interpreta la canción \"Tu tanta falta de querer\"?", "options": ["Mon Laferte", "Dua Lipa", "Belanova", "Natalia Lafourcade"], "correct": 0}, {"question": "La frase \"Gracias a la vida que me ha dado tanto\" es de:", "options": ["Camila", "Gloria Benavides", "Violeta Parra", "Myriam Hernández"], "correct": 2}, {"question": "¿Quién es conocido mundialmente como el «Rey del Pop»?", "options": ["Justin Bieber", "Bruno Mars", "Austin Mahome", "Michael Jackson"], "correct": 3}, {"question": "¿Qué banda lanzó la canción exitosa “Livin’ on a Prayer”?", "options": ["AC/DC", "Bon Jovi", "Guns N' Roses", "Metallica"], "correct": 1}, {"question": "¿Qué boy band lanzó el éxito “I Want It That Way”?", "options": ["Backstreet Boys", "CNCO", "One Direction", "5SOS"], "correct": 0}, {"question": "¿Quién es conocid@ por la canción \"Dímelo Ma\"?", "options": ["Milo J", "Marcianeke", "Katteyes", "Jairo Vera"], "correct": 1}, {"question": "¿Qué grupo interpreta el clásico de la música urbana chilena \"Originala\"?", "options": ["Portavoz", "Shamanes Crew", "Movimiento Original", "Tiro de Gracia"], "correct": 2}, {"question": "¿Cómo se llama la canción romántica en la que Porta le rapea a un amor idealizado que aún no conoce en persona?", "options": ["Mi rosa negra", "Palabras Mudas", "Puras mentiras", "Querida Alma Gemela"], "correct": 3}, {"question": "¿Cuál es la famosa canción de Hatsune Miku en la que exige ser tratada como la \"princesa número uno del mundo\"?", "options": ["World is mine", "PoPiPo", "Melt", "Senbonzakura"], "correct": 0}, {"question": "¿Qué banda canta \"The Rumbling\"?", "options": ["Metallica", "SiM", "BMTH", "Cinema Staff"], "correct": 1}], "Videojuegos": [{"question": "¿Cuál es el videojuego más  vendido de la historia?", "options": ["Tetris", "Minecraft", "Grand The Auto V", "UCN Game  2025"], "correct": 0}, {"question": "¿Cómo se llama este personaje? Foto de Amy Rose", "options": ["Cream", "Amy Rose", "Rouge", "Rosy"], "correct": 1}, {"question": "¿Cuál es la última versión lanzada hasta ahora del videojuego  Minecraft? (Java)", "options": ["1.20", "1.21", "1.22", "1.23"], "correct": 1}, {"question": "¿Cuál fue el primer trabajo de  Super Mario?", "options": ["Ingeniero", "Plomero", "Carpintero", "Profesor Adscrito  A la UCN"], "correct": 2}, {"question": "¿Que compañía diseño y lanzo  Pacman?", "options": ["Nintendo", "Sony", "Game Freak", "Mamco"], "correct": 3}, {"question": "¿Qué estudio de videojuegos es creador de la saga Red Dead Redemption?", "options": ["Mojang", "Rockstars  Game", "Electronic Arts", "Ubisoft"], "correct": 1}, {"question": "¿Cuándo se lanzó Call of Duty  por primera vez?", "options": ["2000.0", "2001.0", "2002.0", "2003.0"], "correct": 3}, {"question": "¿Como se llama el personaje de la imagen?", "options": ["Giroide", "Nosk", "Hyu", "Omochao"], "correct": 2}, {"question": "¿cuantos animatronicos seleccionables se encuentran en Five Nights at Freddy’s: Ultimate Custom Night?", "options": ["50.0", "52.0", "51.0", "58.0"], "correct": 0}, {"question": "¿Como se llama el personaje de la imagen?", "options": ["Bing bon", "Bong Bing", "Bing Bing", "Bing Bong"], "correct": 3}, {"question": "¿Qué material necesitas para craftear un faro (Beacon) en Minecraft además de vidrio y obsidiana?", "options": ["Una Estrella del Nether", "Bloques de Redstone", "Lápiz lázuli", "Polvo de Glowstone"], "correct": 0}, {"question": "¿Quién es la mascota de Nintendo?", "options": ["Pikachu", "Kratos", "Mario", "Crash Bandicoot"], "correct": 2}, {"question": "¿Cómo se llama el oso de FNAF?", "options": ["Alfredo", "Freddy", "Fed Man", "Winnie Pooh"], "correct": 1}, {"question": "¿Qué jefe de Elden Ring monta un caballo ridículamente pequeño debido a que domina la magia gravitacional?", "options": ["General Radahn, el Azote de las Estrellas", "Jinete de la arborescencia (Tree Sentinel)", "Comandante Niall", "Loretta, caballería del Árbol Hierático"], "correct": 0}, {"question": "¿Cuál fue la primera consola de videojuegos casera de la historia?", "options": ["Brown Box", "Atari 2600", "Magnavox Odyssey", "Pong (Home Edition)"], "correct": 2}, {"question": "¿Qué famosa consola de Sony nació originalmente como un accesorio de CD-ROM cancelado para Nintendo?", "options": ["PlayStation", "Sega Saturn", "Panasonic 3DO", "Philips CD-i"], "correct": 0}, {"question": "¿Cómo se llamaba la icónica mascota que Sega creó a finales de los 80 antes de inventar a Sonic?", "options": ["Rista", "Alex Kidd", "Pulseman", "Opa-Opa"], "correct": 1}, {"question": "¿Cuál fue el primer juego de la saga The Legend of Zelda en dar el salto completo a los gráficos en 3D?", "options": ["The Legend of Zelda: Ocarina of Time", "The Legend of Zelda: Majora's Mask", "The Legend of Zelda: Link's Awakening", "The Legend of Zelda: A Link to the Past"], "correct": 0}, {"question": "¿Cómo se llama el dispositivo portátil con forma de esfera que se usa para capturar monstruos en Pokémon?", "options": ["Gigante Ball", "Esfera Cápsula", "Pokébola", "Bakugan"], "correct": 2}, {"question": "¿Qué significan las siglas \"RPG\" en los géneros de videojuegos?", "options": ["Real-time Path Generation", "Role-Playing Game", "Random Proximity Generator", "Rapid Progression Gameplay"], "correct": 1}], "Series/Películas": [{"question": "Seria animada donde aparece Policarpo Avendaño", "options": ["Los Simpson", "Padre de familia", "Clarence", "31 Minutos"], "correct": 3}, {"question": "¿Cuál es el protagonista de la seríe Los Simpson?", "options": ["Homero", "Marge", "Lisa", "Bart"], "correct": 0}, {"question": "¿A qué saga de películas  pertenece el personaje  conocido como Jack Sparrow?", "options": ["El señor de los anillos", "Piratas del  caribe", "Orgullo y prejuicio", "Crepusculo"], "correct": 1}, {"question": "¿En qué película  Leonardo DiCaprio interpreta  al personaje Jack Dawson?", "options": ["Inception", "Titanic", "The revenant", "The beach"], "correct": 1}, {"question": "¿En que año se estreno  Toy Story (1)?", "options": ["1994.0", "1995.0", "1996.0", "1997.0"], "correct": 2}, {"question": "¿Cómo se llama este  personaje? (Foto de Rigby)", "options": ["Rigby", "Mordecai", "Musculoso", "Fantasmín"], "correct": 0}, {"question": "¿Qué personaje de Spy × Family  puede leer la mente?", "options": ["James Bond", "Yor Forger", "Loid Forger", "Anya Forger"], "correct": 3}, {"question": "¿Cuál es la verdadera identidad  de Sailor Moon?", "options": ["Usagi Tsukino", "Luna", "Rei Hino", "Minako Aino"], "correct": 0}, {"question": "En Jujutsu Kaisen,  ¿cuál es el nombre del espíritu  maldito que habita dentro  del protagonista?", "options": ["Gojo Satoru", "Ryomen Sukuna", "Geto Suguru", "El Trauco"], "correct": 1}, {"question": "En Inuyasha (latino),  ¿cómo llama Jaken a Sesshomaru?", "options": ["Sessho-chan", "Amo bonito", "Chikistrikis", "Su merced"], "correct": 1}, {"question": "¿Como se llama el personaje de la imagen?", "options": ["Puchita", "Popocha", "Pochita", "Carlos"], "correct": 2}], "Cultura general": [{"question": "¿Cuál es la capital de  Ecuador?", "options": ["Santiago", "Sucre", "Quito", "El Salvador"], "correct": 2}, {"question": "¿Nombre del último Zar de rusia?", "options": ["Alejandro II de Rusia", "Nicolás II de  Rusia", "Byron II de Rusia", "Pedro II de Rusia"], "correct": 1}, {"question": "¿En que año inicio la primera guerra  mundial?", "options": ["1914.0", "1918.0", "1910.0", "108.0"], "correct": 0}, {"question": "¿Cuál es el idioma más hablado en el  mundo?", "options": ["Español", "Inglés", "Jerigonza", "Chino Mandarín"], "correct": 3}, {"question": "¿Cuál fue el último emparador inca?", "options": ["Tupac Yupanqui", "Atahualpa", "Hayna Cápac", "Huáscar"], "correct": 1}, {"question": "¿Quién pinto la capilla sixtina?", "options": ["Miguel de cervantes", "Darío Contreras", "Miguel Ángel", "Leonardo da  Vinci"], "correct": 2}, {"question": "¿De qué país es origen el sushi?", "options": ["China", "Japón", "Corea del  Norte", "Corea del  Sur"], "correct": 1}, {"question": "¿Cuántos años tiene un lustro?", "options": ["5.0", "2.0", "10.0", "20.0"], "correct": 0}, {"question": "¿A quién se le atribuye la frase \"yo sé que nada sé\"", "options": ["Sócrates", "Artistóteles", "Diego Urrutia", "Platón"], "correct": 3}, {"question": "¿Qué es un ánimal carnivoro?", "options": ["Que solo come lechuga", "Que solo come platantas", "Que solo come carne", "Que come de  todo (No es regodión)"], "correct": 2}, {"question": "¿Quién escribió el himno chileno?", "options": ["Eusebio Lillo", "Arturo Prat", "Víctor Jara", "Manuel Baquedano"], "correct": 0}, {"question": "¿Cuáles eran los colores de la primera bandera chilena?", "options": ["Azul, verde y rojo", "Azul, blanco y amarillo", "Amarillo, negro y morado", "Blanco, azul y rojo"], "correct": 1}, {"question": "¿Quién fue elegido presidente de Chile tras la dictadura militar de Augusto Pinochet?", "options": ["Michelle Bachelet", "Eduardo Frei", "Salvador Allende", "Patricio Aylwin"], "correct": 3}, {"question": "¿Cuál fue el movimiento social liderado por estudiantes chilenos que demandaba reformas educativas en 2006?", "options": ["La Revolución de los Claveles", "La Revolución Estudiantil", "La Revolución pingüina", "Estallido social"], "correct": 2}, {"question": "¿Quién fue presidente de Chile durante el terremoto del 27 de febrero de 2010?", "options": ["Michelle Bachelet", "Sebastián Piñera", "Ricardo Lagos Escobar", "Leonardo Farkas"], "correct": 0}, {"question": "¿Cuál es el río más largo de Chile?", "options": ["Río Maipo", "Río Loa", "Río Bíobío", "Río Amazonas"], "correct": 1}, {"question": "¿Quién escribió La Odisea?", "options": ["Virgilio", "Sófocles", "Homero", "Aristóteles"], "correct": 2}, {"question": "¿Quién es el autor de la novela Cien años de soledad?", "options": ["Pablo Neruda", "Miguel de Cervantes", "Don Quijote de la Mancha", "Gabriel García Márquez"], "correct": 3}, {"question": "¿En qué isla del Atlántico Sur falleció Napoleón Bonaparte en su segundo exilio?", "options": ["Isla de Elba", "Isla de la reunión", "Isla Santa Elena", "Isla Martín García"], "correct": 2}, {"question": "Qué país ha ganado más Copas Mundiales de la FIFA?", "options": ["Brasil", "Francia", "Argentina", "España"], "correct": 0}], "Cultura general DISC/Universidad": [{"question": "Carrera que fue integrada recientemente al DISC", "options": ["Ingeniería Civil Energía", "Ingeniería   Civil Electrónica", "Ingeniería en Construcción", "Ingeniería en Software"], "correct": 1}, {"question": "Año de creación del DISC", "options": ["1985.0", "1991.0", "1979.0", "1975.0"], "correct": 2}, {"question": "Nombre del académico que fue director del departamento en el año 2019", "options": ["Ítalo Donoso", "Claudio Meneses", "Aldo Quelopana", "Carlos Pon"], "correct": 1}, {"question": "¿Cuantos programas de posgrado tiene el DISC?", "options": ["No tiene", "1.0", "2.0", "3.0"], "correct": 2}, {"question": "Nombre del encargado de soporte del DISC", "options": ["Maurcio  Hernández", "Oswaldo Menendez", "Claudio Meneses", "Diego Urrutia"], "correct": 0}, {"question": "¿Cuál es el nombre del edificio donde  se encuentra el DISC?", "options": ["V2", "X3", "Y2", "Y1"], "correct": 3}, {"question": "¿En qué bloque se desarrolla la reunión de los académicos del departamento?", "options": ["Lunes D", "Martes D", "Miércoles D", "Jueves D"], "correct": 2}, {"question": "¿Cuanto dura el rol del director de departamento?", "options": ["1 Año", "2 Años", "3 Años", "4 Años"], "correct": 1}, {"question": "Nombre de la secretaria de docencia del DISC", "options": ["Dima Morales", "Génesis Olivares", "Evelyn Hormazabal", "Angélica Flores"], "correct": 2}, {"question": "¿Cuál es el nombre la decada de nuestra facultad?", "options": ["Carolina Rojas", "Angélica Flores", "María Hernández", "Mariela Tapia"], "correct": 0}, {"question": "¿A qué facultad pertenece el DISC?", "options": ["FACEA", "FICG", "DGpre", "Humanidades"], "correct": 1}, {"question": "¿Cuál es el nombre del secretario docente de nuestra facultad?", "options": ["Oswaldo Menendez", "Diego Urrutia", "Brian Keith", "Ítalo Donoso"], "correct": 3}]};
+</script>
+<script>
+const CATEGORY_ORDER = Object.keys(QUESTION_BANK);
+const TOTAL_AVAILABLE = CATEGORY_ORDER.reduce((n,c)=>n+QUESTION_BANK[c].filter(q=>q.correct!=null).length,0);
+
+// ---------------- storage layer (jsonblob.com, no login needed) ----------------
+const BLOB_API = 'https://jsonblob.com/api/jsonBlob';
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+async function createBlob(data){
+  const res = await fetch(BLOB_API, {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Accept':'application/json'},
+    body: JSON.stringify(data)
+  });
+  if(!res.ok) throw new Error('create_failed');
+  let loc = res.headers.get('Location') || res.headers.get('location');
+  if(!loc){
+    // fallback: some browsers/proxies strip the header; try reading it from the body echo
+    throw new Error('no_location');
+  }
+  return loc.split('/').pop();
+}
+async function getBlob(id){
+  const res = await fetch(`${BLOB_API}/${id}`, {headers:{'Accept':'application/json'}, cache:'no-store'});
+  if(res.status===404) return null;
+  if(!res.ok) throw new Error('get_failed');
+  return res.json();
+}
+async function putBlob(id, data){
+  const res = await fetch(`${BLOB_API}/${id}`, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json','Accept':'application/json'},
+    body: JSON.stringify(data)
+  });
+  if(!res.ok) throw new Error('put_failed');
+}
+// Read-modify-write with verification + retry: jsonblob has no built-in optimistic
+// locking, so instead of trusting a single write we re-read after writing and keep
+// retrying until the change we wanted is actually visible.
+async function mutateBlob(id, mutateFn, verifyFn, tries=6){
+  let lastErr = null;
+  for(let i=0;i<tries;i++){
+    try{
+      const current = await getBlob(id) || {};
+      const next = mutateFn(JSON.parse(JSON.stringify(current)));
+      await putBlob(id, next);
+      await sleep(180);
+      const after = await getBlob(id);
+      if(after && verifyFn(after)) return after;
+    }catch(e){ lastErr = e; }
+    await sleep(300 + Math.random()*500);
+  }
+  throw lastErr || new Error('mutate_failed');
+}
+
+function myClientId(){
+  let id = null;
+  try{ id = localStorage.getItem('disquizz_client_id'); }catch(e){}
+  if(!id){
+    id = (crypto.randomUUID ? crypto.randomUUID() : 'c'+Math.random().toString(36).slice(2)+Date.now().toString(36));
+    try{ localStorage.setItem('disquizz_client_id', id); }catch(e){}
+  }
+  return id;
+}
+const CLIENT_ID = myClientId();
+
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+function esc(s){
+  return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function el(html){
+  const t = document.createElement('template');
+  t.innerHTML = html.trim();
+  return t.content.firstElementChild;
+}
+function baseUrl(){
+  return location.origin + location.pathname;
+}
+function joinUrlFor(gameId){
+  return baseUrl() + '#g=' + gameId;
+}
+function renderJoinQR(containerId, gameId){
+  const box = document.getElementById(containerId);
+  if(!box) return;
+  box.innerHTML = '';
+  if(typeof QRCode === 'undefined'){
+    box.closest('.qrbox')?.classList.add('hidden');
+    return;
+  }
+  try{
+    new QRCode(box, {
+      text: joinUrlFor(gameId),
+      width: 160, height: 160,
+      colorDark: '#13102A', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }catch(e){
+    box.closest('.qrbox')?.classList.add('hidden');
+  }
+}
+
+// ---------------- app state ----------------
+let role = null; // 'host' | 'player'
+let gameId = null;
+let answersId = null; // id of the answers blob for this game
+let gameDoc = null;
+let answersDoc = {};
+let myScore = 0;
+let myName = "";
+let answeredThisRound = false;
+let myLastAnswer = null;
+let countdownTimer = null;
+let pollTimer = null;
+
+const app = document.getElementById('app');
+function render(html){ app.innerHTML=''; app.appendChild(el(html)); }
+
+function topbar(phase){
+  return `<div class="topbar">
+    <div class="brand"><span class="mark">Dis<em>quizz</em></span></div>
+    ${gameId? `<span class="phase-pill">${phase}</span>`:''}
+  </div>`;
+}
+
+function saveSession(){
+  try{ localStorage.setItem('disquizz_session', JSON.stringify({gameId, answersId, role, name:myName})); }catch(e){}
+}
+function clearSession(){
+  try{ localStorage.removeItem('disquizz_session'); }catch(e){}
+}
+function teardown(){
+  if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
+  if(countdownTimer){ clearInterval(countdownTimer); countdownTimer=null; }
+  gameDoc=null; answersDoc={}; gameId=null; answersId=null; role=null;
+}
+
+function boot(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('disquizz_session')||'null');
+    if(saved && saved.gameId && saved.role){
+      gameId=saved.gameId; answersId=saved.answersId; role=saved.role; myName=saved.name||'';
+      startPolling();
+      return;
+    }
+  }catch(e){}
+  const m = /#g=([a-zA-Z0-9-]+)/.exec(location.hash||'');
+  if(m){ showJoin(m[1]); return; }
+  showStart();
+}
+
+// ================= START =================
+function showStart(){
+  teardown();
+  render(`
+    <div class="wrap">
+      ${topbar('inicio')}
+      <div class="stage">
+        <div class="card center col" style="gap:18px;">
+          <h1 style="font-size:clamp(30px,6vw,42px);">Pon a prueba a tu curso</h1>
+          <p class="muted">Preguntas de música, videojuegos, series y cultura general, en orden al azar. Sin cuentas, solo entra y juega.</p>
+          <div class="row" style="justify-content:center; margin-top:6px;">
+            <button class="btn primary big" id="btn-host">Crear partida</button>
+            <button class="btn big" id="btn-join">Unirme a partida</button>
+          </div>
+        </div>
+      </div>
+      <footer class="note">${TOTAL_AVAILABLE} preguntas disponibles en el banco</footer>
+    </div>
+  `);
+  document.getElementById('btn-host').onclick = showHostSetup;
+  document.getElementById('btn-join').onclick = ()=>showJoin('');
+}
+
+// ================= HOST: SETUP =================
+let setupSelected = new Set(CATEGORY_ORDER);
+let setupCount = 15;
+let setupLimit = 20;
+
+function showHostSetup(){
+  render(`
+    <div class="wrap">
+      ${topbar('crear partida')}
+      <div class="stage">
+        <div class="card col" style="gap:20px;">
+          <h2>Configura tu partida</h2>
+          <div class="col">
+            <span class="muted" style="font-size:13px;">Categorías</span>
+            <div class="chip-grid" id="cats"></div>
+          </div>
+          <div class="row" style="gap:24px;">
+            <div class="col" style="flex:1; min-width:140px;">
+              <span class="muted" style="font-size:13px;">Nº de preguntas</span>
+              <div class="seg" id="seg-count"></div>
+            </div>
+            <div class="col" style="flex:1; min-width:140px;">
+              <span class="muted" style="font-size:13px;">Tiempo por pregunta</span>
+              <div class="seg" id="seg-time"></div>
+            </div>
+          </div>
+          <p class="err" id="setup-err"></p>
+          <div class="row">
+            <button class="btn ghost" id="back">Volver</button>
+            <button class="btn primary block" id="create">Crear sala</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+  const catsEl = document.getElementById('cats');
+  CATEGORY_ORDER.forEach(cat=>{
+    const n = QUESTION_BANK[cat].filter(q=>q.correct!=null).length;
+    const chip = el(`<label class="chip ${setupSelected.has(cat)?'checked':''}">
+      <input type="checkbox" ${setupSelected.has(cat)?'checked':''}>
+      <span style="flex:1;min-width:0;">${esc(cat)}</span>
+      <span class="n">${n}</span>
+    </label>`);
+    chip.querySelector('input').onchange = (e)=>{
+      if(e.target.checked) setupSelected.add(cat); else setupSelected.delete(cat);
+      chip.classList.toggle('checked', e.target.checked);
+    };
+    catsEl.appendChild(chip);
+  });
+  const segCount = document.getElementById('seg-count');
+  [10,15,20,30].forEach(n=>{
+    const b = el(`<button type="button" class="${n===setupCount?'on':''}">${n}</button>`);
+    b.onclick = ()=>{ setupCount=n; [...segCount.children].forEach(c=>c.classList.toggle('on', c===b)); };
+    segCount.appendChild(b);
+  });
+  const segTime = document.getElementById('seg-time');
+  [10,20,30].forEach(n=>{
+    const b = el(`<button type="button" class="${n===setupLimit?'on':''}">${n}s</button>`);
+    b.onclick = ()=>{ setupLimit=n; [...segTime.children].forEach(c=>c.classList.toggle('on', c===b)); };
+    segTime.appendChild(b);
+  });
+  document.getElementById('back').onclick = showStart;
+  document.getElementById('create').onclick = createGame;
+}
+
+async function createGame(){
+  const errEl = document.getElementById('setup-err');
+  errEl.textContent = '';
+  const cats = setupSelected.size? [...setupSelected] : CATEGORY_ORDER;
+  let pool = [];
+  cats.forEach(c=> pool.push(...QUESTION_BANK[c].filter(q=>q.correct!=null).map(q=>({...q, cat:c}))));
+  if(pool.length < 3){ errEl.textContent = 'Elige categorías con más preguntas disponibles.'; return; }
+  const n = Math.min(setupCount, pool.length);
+  const picked = shuffle(pool).slice(0,n).map(q=>{
+    const order = shuffle(q.options.map((o,i)=>i));
+    const options = order.map(i=>q.options[i]);
+    const correct = order.indexOf(q.correct);
+    return { question:q.question, options, correct, cat:q.cat };
+  });
+
+  const createBtn = document.getElementById('create');
+  createBtn.disabled = true; createBtn.textContent = 'Creando…';
+  try{
+    const newAnswersId = await createBlob({});
+    const newGameId = await createBlob({
+      status:'lobby', qIndex:-1, questions:picked, limitMs:setupLimit*1000,
+      startedAt:0, createdAt:Date.now(), answersId:newAnswersId, players:{}
+    });
+    gameId = newGameId; answersId = newAnswersId; role='host';
+    saveSession();
+    startPolling();
+  }catch(e){
+    errEl.textContent = 'No se pudo crear la sala (falló el servicio de almacenamiento). Intenta de nuevo en unos segundos.';
+    createBtn.disabled=false; createBtn.textContent='Crear sala';
+  }
+}
+
+// ================= POLLING =================
+function startPolling(){
+  pollOnce();
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollOnce, 1400);
+}
+async function pollOnce(){
+  try{
+    const g = await getBlob(gameId);
+    if(!g){ gameDoc=null; draw(); return; }
+    gameDoc = g;
+    if(!answersId) answersId = g.answersId;
+    if(answersId && (gameDoc.status==='question' || gameDoc.status==='reveal' || gameDoc.status==='end')){
+      answersDoc = await getBlob(answersId) || {};
+    }
+    if(role==='player' && gameDoc.players && gameDoc.players[CLIENT_ID]){
+      myScore = gameDoc.players[CLIENT_ID].score||0;
+    }
+    draw();
+  }catch(e){ /* transient network hiccup: next poll retries */ }
+}
+
+function draw(){
+  if(!gameDoc){
+    render(`<div class="wrap">${topbar('')}<div class="stage"><div class="card center col" style="gap:14px;"><p>Esta partida ya no existe.</p><button class="btn" id="home">Volver al inicio</button></div></div></div>`);
+    document.getElementById('home').onclick = ()=>{ clearSession(); showStart(); };
+    return;
+  }
+  if(role==='host'){
+    if(gameDoc.status==='lobby') return drawHostLobby();
+    if(gameDoc.status==='question') return drawHostQuestion();
+    if(gameDoc.status==='reveal') return drawHostReveal();
+    if(gameDoc.status==='end') return drawPodium(true);
+  }else{
+    if(gameDoc.status==='lobby') return drawPlayerWait();
+    if(gameDoc.status==='question') return drawPlayerQuestion();
+    if(gameDoc.status==='reveal') return drawPlayerReveal();
+    if(gameDoc.status==='end') return drawPodium(false);
+  }
+}
+
+// ================= HOST SCREENS =================
+function drawHostLobby(){
+  const players = Object.values(gameDoc.players||{});
+  render(`
+    <div class="wrap">
+      ${topbar('sala de espera')}
+      <div class="stage">
+        <div class="card center col" style="gap:14px;">
+          <span class="muted">Escanea para unirte</span>
+          <div class="qrbox"><div id="qr"></div></div>
+          <span class="muted" style="font-size:12px;">o comparte este enlace</span>
+          <div class="codetext">${esc(joinUrlFor(gameId))}</div>
+        </div>
+        <div class="card col" style="gap:12px;">
+          <h3 style="font-size:18px;">Jugadores (${players.length})</h3>
+          <div class="players">
+            ${players.length? players.map(p=>`<span class="player-tag"><span class="dot"></span>${esc(p.name)}</span>`).join('') : '<span class="muted">Nadie se ha unido todavía…</span>'}
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn ghost" id="cancel">Cancelar partida</button>
+          <button class="btn primary block" id="start" ${players.length? '':'disabled'}>Iniciar partida</button>
+        </div>
+      </div>
+    </div>
+  `);
+  renderJoinQR('qr', gameId);
+  document.getElementById('start').onclick = startGame;
+  document.getElementById('cancel').onclick = ()=>{ clearSession(); showStart(); };
+}
+
+async function startGame(){
+  const btn = document.getElementById('start');
+  if(btn){ btn.disabled=true; btn.textContent='Iniciando…'; }
+  try{
+    await mutateBlob(gameId,
+      g=>({...g, status:'question', qIndex:0, startedAt: Date.now()}),
+      g=>g.status==='question' && g.qIndex===0
+    );
+    pollOnce();
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='Iniciar partida'; }
+  }
+}
+
+function drawHostQuestion(){
+  const q = gameDoc.questions[gameDoc.qIndex];
+  const answeredCount = Object.keys(answersDoc).filter(k=>k.startsWith(gameDoc.qIndex+'_')).length;
+  render(`
+    <div class="wrap">
+      ${topbar(`pregunta ${gameDoc.qIndex+1} / ${gameDoc.questions.length}`)}
+      <div class="stage">
+        <div class="card col" style="gap:16px;">
+          <span class="muted" style="font-size:13px; text-transform:uppercase; letter-spacing:.06em;">${esc(q.cat||'')}</span>
+          <div class="qtext">${esc(q.question)}</div>
+          <div class="timerbar"><div id="bar" style="width:100%;"></div></div>
+          <p class="muted">${answeredCount} jugador(es) respondieron</p>
+          <div class="row">
+            <button class="btn primary block" id="reveal">Mostrar respuesta</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+  document.getElementById('reveal').onclick = revealAnswer;
+  startHostCountdown();
+}
+
+function startHostCountdown(){
+  if(countdownTimer) clearInterval(countdownTimer);
+  const tick = ()=>{
+    const bar = document.getElementById('bar');
+    if(!gameDoc || gameDoc.status!=='question'){ clearInterval(countdownTimer); return; }
+    const elapsed = Date.now()-gameDoc.startedAt;
+    const pct = Math.max(0, 100 - (elapsed/gameDoc.limitMs)*100);
+    if(bar) bar.style.width = pct+'%';
+    if(elapsed >= gameDoc.limitMs){ clearInterval(countdownTimer); revealAnswer(); }
+  };
+  tick();
+  countdownTimer = setInterval(tick, 300);
+}
+
+let revealing = false;
+async function revealAnswer(){
+  if(revealing) return;
+  if(countdownTimer) clearInterval(countdownTimer);
+  if(!gameDoc || gameDoc.status!=='question') return;
+  revealing = true;
+  try{
+    await mutateBlob(gameId, g=>({...g, status:'reveal'}), g=>g.status==='reveal');
+    await pollOnce();
+  }finally{ revealing = false; }
+}
+
+function drawHostReveal(){
+  const q = gameDoc.questions[gameDoc.qIndex];
+  const isLast = gameDoc.qIndex >= gameDoc.questions.length-1;
+  const counts = {};
+  Object.entries(answersDoc).forEach(([k,a])=>{ if(k.startsWith(gameDoc.qIndex+'_')) counts[a.optionIndex]=(counts[a.optionIndex]||0)+1; });
+  const maxCount = Math.max(1, ...q.options.map((_,i)=>counts[i]||0));
+  const leaderboard = Object.values(gameDoc.players||{}).sort((a,b)=>(b.score||0)-(a.score||0)).slice(0,5);
+  render(`
+    <div class="wrap">
+      ${topbar(`respuesta ${gameDoc.qIndex+1} / ${gameDoc.questions.length}`)}
+      <div class="stage">
+        <div class="card col" style="gap:14px;">
+          <div class="qtext">${esc(q.question)}</div>
+          <div class="counts">
+            ${q.options.map((o,i)=>`
+              <div class="countrow">
+                <span style="width:18px;">${i===q.correct?'✅':''}</span>
+                <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; ${i===q.correct?'font-weight:700;':''}">${esc(o)}</span>
+                <span class="track"><span class="fill" style="width:${((counts[i]||0)/maxCount)*100}%; background:${i===q.correct?'var(--ok)':'var(--line)'}"></span></span>
+                <span class="n">${counts[i]||0}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <div class="card col" style="gap:10px;">
+          <h3 style="font-size:16px;">Top puntajes</h3>
+          <div class="lead">
+            ${leaderboard.map((p,i)=>`<div class="leadrow"><span class="rank">${i+1}</span><span class="name">${esc(p.name)}</span><span class="score">${p.score||0}</span></div>`).join('') || '<span class="muted">Sin jugadores</span>'}
+          </div>
+        </div>
+        <button class="btn primary block big" id="next">${isLast? 'Ver resultados finales' : 'Siguiente pregunta'}</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('next').onclick = async ()=>{
+    const btn = document.getElementById('next');
+    btn.disabled = true;
+    try{
+      if(isLast){
+        await mutateBlob(gameId, g=>({...g, status:'end'}), g=>g.status==='end');
+      }else{
+        const nextIdx = gameDoc.qIndex+1;
+        await mutateBlob(gameId, g=>({...g, status:'question', qIndex:nextIdx, startedAt:Date.now()}), g=>g.status==='question' && g.qIndex===nextIdx);
+      }
+      pollOnce();
+    }catch(e){ btn.disabled=false; }
+  };
+}
+
+// ================= JOIN / PLAYER =================
+function showJoin(prefillId){
+  render(`
+    <div class="wrap">
+      ${topbar('unirme')}
+      <div class="stage">
+        <div class="card col" style="gap:16px;">
+          <h2>Unirme a una partida</h2>
+          <label class="field">Código de la partida (o pégalo si te lo pasaron por link)
+            <input type="text" id="code" placeholder="Código" value="${prefillId?esc(prefillId):''}">
+          </label>
+          <label class="field">Tu nombre
+            <input type="text" id="name" maxlength="20" placeholder="Nombre">
+          </label>
+          <p class="err" id="join-err"></p>
+          <div class="row">
+            <button class="btn ghost" id="back">Volver</button>
+            <button class="btn primary block" id="go">Unirme</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+  document.getElementById('back').onclick = showStart;
+  document.getElementById('go').onclick = doJoin;
+  document.getElementById('name').addEventListener('keydown', e=>{ if(e.key==='Enter') doJoin(); });
+  if(prefillId) document.getElementById('name').focus();
+}
+
+async function doJoin(){
+  const errEl = document.getElementById('join-err');
+  errEl.textContent='';
+  const code = document.getElementById('code').value.trim();
+  const name = document.getElementById('name').value.trim();
+  if(!code){ errEl.textContent='Escribe o pega el código de la partida.'; return; }
+  if(!name){ errEl.textContent='Escribe tu nombre.'; return; }
+  const goBtn = document.getElementById('go');
+  goBtn.disabled = true; goBtn.textContent='Uniendo…';
+  try{
+    const g = await getBlob(code);
+    if(!g){ errEl.textContent='No existe una partida con ese código.'; goBtn.disabled=false; goBtn.textContent='Unirme'; return; }
+    if(g.status!=='lobby'){ errEl.textContent='Esa partida ya comenzó o terminó.'; goBtn.disabled=false; goBtn.textContent='Unirme'; return; }
+    await mutateBlob(code,
+      cur=>({...cur, players:{...(cur.players||{}), [CLIENT_ID]:{name, score:0, joinedAt:Date.now()}}}),
+      cur=> !!(cur.players && cur.players[CLIENT_ID])
+    );
+    gameId = code; answersId = g.answersId; role='player'; myName = name; myScore = 0;
+    saveSession();
+    startPolling();
+  }catch(e){
+    errEl.textContent='No se pudo unir (falló el servicio de almacenamiento). Intenta de nuevo.';
+    goBtn.disabled=false; goBtn.textContent='Unirme';
+  }
+}
+
+function drawPlayerWait(){
+  render(`
+    <div class="wrap">
+      ${topbar('sala de espera')}
+      <div class="stage">
+        <div class="card center col" style="gap:14px;">
+          <h2>¡Estás dentro, ${esc(myName)}!</h2>
+          <p class="muted">Esperando a que el anfitrión inicie la partida…</p>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+let lastQIndex = -1, lastStatus = null;
+function drawPlayerQuestion(){
+  if(lastQIndex!==gameDoc.qIndex || lastStatus!=='question'){ answeredThisRound=false; myLastAnswer=null; }
+  lastQIndex = gameDoc.qIndex; lastStatus='question';
+  const q = gameDoc.questions[gameDoc.qIndex];
+  const shapes = ['o0','o1','o2','o3'];
+  render(`
+    <div class="wrap">
+      ${topbar(`pregunta ${gameDoc.qIndex+1} / ${gameDoc.questions.length}`)}
+      <div class="stage">
+        <div class="card col" style="gap:14px;">
+          <div class="qtext">${esc(q.question)}</div>
+          <div class="timerbar"><div id="bar" style="width:100%;"></div></div>
+        </div>
+        <div class="opts" id="opts">
+          ${q.options.map((o,i)=>`<button class="opt ${shapes[i]}" data-i="${i}" ${answeredThisRound?'disabled':''}><span class="shape"></span><span class="label">${esc(o)}</span></button>`).join('')}
+        </div>
+        <p class="muted center" id="status">${answeredThisRound? 'Respuesta enviada. Esperando a los demás…' : 'Toca una opción'}</p>
+      </div>
+    </div>
+  `);
+  document.querySelectorAll('#opts .opt').forEach(btn=>{
+    btn.onclick = ()=> submitAnswer(parseInt(btn.dataset.i,10));
+  });
+  if(countdownTimer) clearInterval(countdownTimer);
+  const tick = ()=>{
+    const bar = document.getElementById('bar');
+    if(!gameDoc || gameDoc.status!=='question'){ clearInterval(countdownTimer); return; }
+    const elapsed = Date.now()-gameDoc.startedAt;
+    const pct = Math.max(0, 100 - (elapsed/gameDoc.limitMs)*100);
+    if(bar) bar.style.width = pct+'%';
+  };
+  tick();
+  countdownTimer = setInterval(tick, 300);
+}
+
+async function submitAnswer(i){
+  if(answeredThisRound || !gameDoc || gameDoc.status!=='question') return;
+  answeredThisRound = true;
+  document.querySelectorAll('#opts .opt').forEach(b=>b.disabled=true);
+  const statusEl = document.getElementById('status');
+  if(statusEl) statusEl.textContent = 'Enviando…';
+  const q = gameDoc.questions[gameDoc.qIndex];
+  const qIndex = gameDoc.qIndex;
+  const elapsed = Date.now() - gameDoc.startedAt;
+  const correct = i === q.correct;
+  const remainFrac = Math.max(0, Math.min(1, (gameDoc.limitMs-elapsed)/gameDoc.limitMs));
+  const points = correct ? Math.round(300 + 700*remainFrac) : 0;
+  myLastAnswer = { optionIndex:i, correct, points };
+  const key = `${qIndex}_${CLIENT_ID}`;
+  try{
+    await mutateBlob(answersId,
+      cur=>({...cur, [key]:{clientId:CLIENT_ID, name:myName, qIndex, optionIndex:i, correct, points, answeredAt:Date.now()}}),
+      cur=> !!cur[key]
+    );
+    // Add points to this player's own score. Re-reads the freshest document on every
+    // retry and only touches our own player key, so a collision with another player's
+    // concurrent write resolves itself instead of dropping either update.
+    await mutateBlob(gameId,
+      g=>{
+        const prev = g.players[CLIENT_ID] || {name:myName, score:0};
+        return {...g, players:{...g.players, [CLIENT_ID]:{...prev, score:(prev.score||0)+points, lastAnsweredQ:qIndex}}};
+      },
+      g=> g.players[CLIENT_ID]?.lastAnsweredQ === qIndex
+    );
+    if(statusEl) statusEl.textContent = 'Respuesta enviada. Esperando a los demás…';
+  }catch(e){
+    if(statusEl) statusEl.textContent = 'No se pudo enviar tu respuesta, revisa tu conexión.';
+  }
+}
+
+function drawPlayerReveal(){
+  lastStatus='reveal';
+  const q = gameDoc.questions[gameDoc.qIndex];
+  const shapes = ['o0','o1','o2','o3'];
+  const picked = myLastAnswer ? myLastAnswer.optionIndex : null;
+  render(`
+    <div class="wrap">
+      ${topbar(`respuesta ${gameDoc.qIndex+1} / ${gameDoc.questions.length}`)}
+      <div class="stage">
+        <div class="card col" style="gap:14px;">
+          <div class="qtext">${esc(q.question)}</div>
+        </div>
+        <div class="opts">
+          ${q.options.map((o,i)=>{
+            let cls = shapes[i];
+            if(i===q.correct) cls += ' correct';
+            else if(i===picked) cls += ' wrong';
+            return `<div class="opt ${cls}" style="cursor:default;"><span class="shape"></span><span class="label">${esc(o)}</span></div>`;
+          }).join('')}
+        </div>
+        ${myLastAnswer ? `
+          <div class="feedback ${myLastAnswer.correct?'ok':'no'}">
+            <div class="pts">${myLastAnswer.correct? '+'+myLastAnswer.points : '0'}</div>
+            <div>${myLastAnswer.correct? '¡Correcto!' : 'Incorrecto'}</div>
+            <div class="muted">Puntaje total: ${myScore}</div>
+          </div>
+        ` : `<div class="feedback"><div class="muted">No alcanzaste a responder</div><div class="muted">Puntaje total: ${myScore}</div></div>`}
+      </div>
+    </div>
+  `);
+}
+
+function drawPodium(isHost){
+  const sorted = Object.values(gameDoc.players||{}).sort((a,b)=>(b.score||0)-(a.score||0));
+  const top3 = sorted.slice(0,3);
+  const rest = sorted.slice(3,10);
+  const order = top3.length===3? [top3[1],top3[0],top3[2]] : top3;
+  const podiumHtml = order.filter(Boolean).map(p=>{
+    const rank = top3.indexOf(p)+1;
+    return `<div class="pillar p${rank}"><span class="nm">${esc(p.name)}</span><div class="bar">${rank===1?'🏆':''} ${p.score||0}</div></div>`;
+  }).join('');
+  render(`
+    <div class="wrap">
+      ${topbar('resultados finales')}
+      <div class="stage">
+        <div class="card col center" style="gap:10px;">
+          <h2>¡Partida terminada!</h2>
+          <div class="podium">${podiumHtml || '<span class="muted">Sin jugadores</span>'}</div>
+        </div>
+        ${rest.length? `<div class="card col" style="gap:8px;">
+          <h3 style="font-size:15px;">Resto de la tabla</h3>
+          <div class="lead">
+            ${rest.map((p,i)=>`<div class="leadrow"><span class="rank">${i+4}</span><span class="name">${esc(p.name)}</span><span class="score">${p.score||0}</span></div>`).join('')}
+          </div>
+        </div>`:''}
+        <button class="btn block big ${isHost?'primary':''}" id="again">Volver al inicio</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('again').onclick = ()=>{ clearSession(); showStart(); };
+}
+
+boot();
+</script>
+</body>
+</html>
