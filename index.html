@@ -157,55 +157,53 @@ const QUESTION_BANK = {"Música": [{"question": "¿Quién es el cantante de la b
 const CATEGORY_ORDER = Object.keys(QUESTION_BANK);
 const TOTAL_AVAILABLE = CATEGORY_ORDER.reduce((n,c)=>n+QUESTION_BANK[c].filter(q=>q.correct!=null).length,0);
 
-// ---------------- storage layer (jsonblob.com, no login needed) ----------------
-const BLOB_API = 'https://jsonblob.com/api/jsonBlob';
+// ---------------- storage layer (kvdb.io, no login needed) ----------------
+// Each game gets its own "bucket" (a short random id from kvdb.io); inside it we
+// keep two keys: "state" (status/questions/players, written mostly by the host)
+// and "answers" (one entry per player per question, written by each player for
+// themselves). Bodies are sent as plain strings (not an explicit JSON content
+// type) on purpose: that keeps requests inside the CORS "simple request" rules,
+// so the browser never needs a preflight the service might not answer correctly.
+const KV_BASE = 'https://kvdb.io';
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
-async function createBlob(data){
-  const res = await fetch(BLOB_API, {
-    method:'POST',
-    headers:{'Content-Type':'application/json','Accept':'application/json'},
-    body: JSON.stringify(data)
-  });
-  if(!res.ok) throw new Error('create_failed');
-  let loc = res.headers.get('Location') || res.headers.get('location');
-  if(!loc){
-    // fallback: some browsers/proxies strip the header; try reading it from the body echo
-    throw new Error('no_location');
-  }
-  return loc.split('/').pop();
+async function kvCreateBucket(){
+  const res = await fetch(KV_BASE + '/', { method:'POST' });
+  if(!res.ok) throw new Error('No se pudo crear la sala (HTTP '+res.status+').');
+  const id = (await res.text()).trim();
+  if(!id) throw new Error('El servicio de almacenamiento no devolvió un código de sala.');
+  return id;
 }
-async function getBlob(id){
-  const res = await fetch(`${BLOB_API}/${id}`, {headers:{'Accept':'application/json'}, cache:'no-store'});
+async function kvGet(bucket, key){
+  const res = await fetch(`${KV_BASE}/${bucket}/${key}`, { cache:'no-store' });
   if(res.status===404) return null;
-  if(!res.ok) throw new Error('get_failed');
-  return res.json();
+  if(!res.ok) throw new Error('No se pudo leer la partida (HTTP '+res.status+').');
+  const txt = await res.text();
+  if(!txt) return null;
+  try{ return JSON.parse(txt); }catch(e){ return null; }
 }
-async function putBlob(id, data){
-  const res = await fetch(`${BLOB_API}/${id}`, {
-    method:'PUT',
-    headers:{'Content-Type':'application/json','Accept':'application/json'},
-    body: JSON.stringify(data)
-  });
-  if(!res.ok) throw new Error('put_failed');
+async function kvSet(bucket, key, value){
+  const res = await fetch(`${KV_BASE}/${bucket}/${key}`, { method:'POST', body: JSON.stringify(value) });
+  if(!res.ok) throw new Error('No se pudo guardar (HTTP '+res.status+').');
 }
-// Read-modify-write with verification + retry: jsonblob has no built-in optimistic
+// Read-modify-write with verification + retry: kvdb.io has no built-in optimistic
 // locking, so instead of trusting a single write we re-read after writing and keep
-// retrying until the change we wanted is actually visible.
-async function mutateBlob(id, mutateFn, verifyFn, tries=6){
+// retrying until the change we wanted is actually visible (this is what lets many
+// players write to the same game at once without silently losing each other's update).
+async function mutateKV(bucket, key, mutateFn, verifyFn, tries=6){
   let lastErr = null;
   for(let i=0;i<tries;i++){
     try{
-      const current = await getBlob(id) || {};
+      const current = await kvGet(bucket, key) || {};
       const next = mutateFn(JSON.parse(JSON.stringify(current)));
-      await putBlob(id, next);
+      await kvSet(bucket, key, next);
       await sleep(180);
-      const after = await getBlob(id);
+      const after = await kvGet(bucket, key);
       if(after && verifyFn(after)) return after;
     }catch(e){ lastErr = e; }
     await sleep(300 + Math.random()*500);
   }
-  throw lastErr || new Error('mutate_failed');
+  throw lastErr || new Error('No se pudo confirmar el guardado, intenta de nuevo.');
 }
 
 function myClientId(){
@@ -263,8 +261,7 @@ function renderJoinQR(containerId, gameId){
 
 // ---------------- app state ----------------
 let role = null; // 'host' | 'player'
-let gameId = null;
-let answersId = null; // id of the answers blob for this game
+let gameId = null; // the kvdb.io bucket id shared by this game's "state" and "answers" keys
 let gameDoc = null;
 let answersDoc = {};
 let myScore = 0;
@@ -285,7 +282,7 @@ function topbar(phase){
 }
 
 function saveSession(){
-  try{ localStorage.setItem('disquizz_session', JSON.stringify({gameId, answersId, role, name:myName})); }catch(e){}
+  try{ localStorage.setItem('disquizz_session', JSON.stringify({gameId, role, name:myName})); }catch(e){}
 }
 function clearSession(){
   try{ localStorage.removeItem('disquizz_session'); }catch(e){}
@@ -293,14 +290,14 @@ function clearSession(){
 function teardown(){
   if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
   if(countdownTimer){ clearInterval(countdownTimer); countdownTimer=null; }
-  gameDoc=null; answersDoc={}; gameId=null; answersId=null; role=null;
+  gameDoc=null; answersDoc={}; gameId=null; role=null;
 }
 
 function boot(){
   try{
     const saved = JSON.parse(localStorage.getItem('disquizz_session')||'null');
     if(saved && saved.gameId && saved.role){
-      gameId=saved.gameId; answersId=saved.answersId; role=saved.role; myName=saved.name||'';
+      gameId=saved.gameId; role=saved.role; myName=saved.name||'';
       startPolling();
       return;
     }
@@ -416,16 +413,17 @@ async function createGame(){
   const createBtn = document.getElementById('create');
   createBtn.disabled = true; createBtn.textContent = 'Creando…';
   try{
-    const newAnswersId = await createBlob({});
-    const newGameId = await createBlob({
+    const newGameId = await kvCreateBucket();
+    await kvSet(newGameId, 'answers', {});
+    await kvSet(newGameId, 'state', {
       status:'lobby', qIndex:-1, questions:picked, limitMs:setupLimit*1000,
-      startedAt:0, createdAt:Date.now(), answersId:newAnswersId, players:{}
+      startedAt:0, createdAt:Date.now(), players:{}
     });
-    gameId = newGameId; answersId = newAnswersId; role='host';
+    gameId = newGameId; role='host';
     saveSession();
     startPolling();
   }catch(e){
-    errEl.textContent = 'No se pudo crear la sala (falló el servicio de almacenamiento). Intenta de nuevo en unos segundos.';
+    errEl.textContent = 'No se pudo crear la sala (falló el servicio de almacenamiento: '+(e&&e.message?e.message:'error desconocido')+'). Intenta de nuevo en unos segundos.';
     createBtn.disabled=false; createBtn.textContent='Crear sala';
   }
 }
@@ -438,12 +436,11 @@ function startPolling(){
 }
 async function pollOnce(){
   try{
-    const g = await getBlob(gameId);
+    const g = await kvGet(gameId, 'state');
     if(!g){ gameDoc=null; draw(); return; }
     gameDoc = g;
-    if(!answersId) answersId = g.answersId;
-    if(answersId && (gameDoc.status==='question' || gameDoc.status==='reveal' || gameDoc.status==='end')){
-      answersDoc = await getBlob(answersId) || {};
+    if(gameDoc.status==='question' || gameDoc.status==='reveal' || gameDoc.status==='end'){
+      answersDoc = await kvGet(gameId, 'answers') || {};
     }
     if(role==='player' && gameDoc.players && gameDoc.players[CLIENT_ID]){
       myScore = gameDoc.players[CLIENT_ID].score||0;
@@ -506,7 +503,7 @@ async function startGame(){
   const btn = document.getElementById('start');
   if(btn){ btn.disabled=true; btn.textContent='Iniciando…'; }
   try{
-    await mutateBlob(gameId,
+    await mutateKV(gameId, 'state',
       g=>({...g, status:'question', qIndex:0, startedAt: Date.now()}),
       g=>g.status==='question' && g.qIndex===0
     );
@@ -560,7 +557,7 @@ async function revealAnswer(){
   if(!gameDoc || gameDoc.status!=='question') return;
   revealing = true;
   try{
-    await mutateBlob(gameId, g=>({...g, status:'reveal'}), g=>g.status==='reveal');
+    await mutateKV(gameId, 'state', g=>({...g, status:'reveal'}), g=>g.status==='reveal');
     await pollOnce();
   }finally{ revealing = false; }
 }
@@ -604,10 +601,10 @@ function drawHostReveal(){
     btn.disabled = true;
     try{
       if(isLast){
-        await mutateBlob(gameId, g=>({...g, status:'end'}), g=>g.status==='end');
+        await mutateKV(gameId, 'state', g=>({...g, status:'end'}), g=>g.status==='end');
       }else{
         const nextIdx = gameDoc.qIndex+1;
-        await mutateBlob(gameId, g=>({...g, status:'question', qIndex:nextIdx, startedAt:Date.now()}), g=>g.status==='question' && g.qIndex===nextIdx);
+        await mutateKV(gameId, 'state', g=>({...g, status:'question', qIndex:nextIdx, startedAt:Date.now()}), g=>g.status==='question' && g.qIndex===nextIdx);
       }
       pollOnce();
     }catch(e){ btn.disabled=false; }
@@ -653,18 +650,18 @@ async function doJoin(){
   const goBtn = document.getElementById('go');
   goBtn.disabled = true; goBtn.textContent='Uniendo…';
   try{
-    const g = await getBlob(code);
+    const g = await kvGet(code, 'state');
     if(!g){ errEl.textContent='No existe una partida con ese código.'; goBtn.disabled=false; goBtn.textContent='Unirme'; return; }
     if(g.status!=='lobby'){ errEl.textContent='Esa partida ya comenzó o terminó.'; goBtn.disabled=false; goBtn.textContent='Unirme'; return; }
-    await mutateBlob(code,
+    await mutateKV(code, 'state',
       cur=>({...cur, players:{...(cur.players||{}), [CLIENT_ID]:{name, score:0, joinedAt:Date.now()}}}),
       cur=> !!(cur.players && cur.players[CLIENT_ID])
     );
-    gameId = code; answersId = g.answersId; role='player'; myName = name; myScore = 0;
+    gameId = code; role='player'; myName = name; myScore = 0;
     saveSession();
     startPolling();
   }catch(e){
-    errEl.textContent='No se pudo unir (falló el servicio de almacenamiento). Intenta de nuevo.';
+    errEl.textContent='No se pudo unir (falló el servicio de almacenamiento: '+(e&&e.message?e.message:'error desconocido')+'). Intenta de nuevo.';
     goBtn.disabled=false; goBtn.textContent='Unirme';
   }
 }
@@ -734,14 +731,14 @@ async function submitAnswer(i){
   myLastAnswer = { optionIndex:i, correct, points };
   const key = `${qIndex}_${CLIENT_ID}`;
   try{
-    await mutateBlob(answersId,
+    await mutateKV(gameId, 'answers',
       cur=>({...cur, [key]:{clientId:CLIENT_ID, name:myName, qIndex, optionIndex:i, correct, points, answeredAt:Date.now()}}),
       cur=> !!cur[key]
     );
     // Add points to this player's own score. Re-reads the freshest document on every
     // retry and only touches our own player key, so a collision with another player's
     // concurrent write resolves itself instead of dropping either update.
-    await mutateBlob(gameId,
+    await mutateKV(gameId, 'state',
       g=>{
         const prev = g.players[CLIENT_ID] || {name:myName, score:0};
         return {...g, players:{...g.players, [CLIENT_ID]:{...prev, score:(prev.score||0)+points, lastAnsweredQ:qIndex}}};
